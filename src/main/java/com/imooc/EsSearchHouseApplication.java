@@ -7,7 +7,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * @author youyusong
  * @date 2018/06/25
  */
-
 @SpringBootApplication
 public class EsSearchHouseApplication {
 

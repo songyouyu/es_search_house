@@ -1,10 +1,8 @@
 package com.imooc.web.controller;
 
-import com.imooc.base.ApiResponse;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 /**
  * @author youyusong
@@ -13,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Controller
 public class HomeController {
 
-    @GetMapping("/index")
+    @GetMapping(value = {"/", "/index"})
     public String index(Model model) {
         return "index";
     }
@@ -33,7 +31,7 @@ public class HomeController {
         return "500";
     }
 
-    @GetMapping("/logout")
+    @GetMapping("/logout/page")
     public String logoutPage() {
         return "logout";
     }
