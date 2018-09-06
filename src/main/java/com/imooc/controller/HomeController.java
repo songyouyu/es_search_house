@@ -1,4 +1,4 @@
-package com.imooc.web.controller;
+package com.imooc.controller;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;

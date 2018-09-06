@@ -1,4 +1,4 @@
-package com.imooc.web.controller.user;
+package com.imooc.controller;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
