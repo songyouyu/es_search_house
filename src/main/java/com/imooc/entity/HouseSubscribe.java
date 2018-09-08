@@ -6,6 +6,7 @@ import javax.persistence.*;
 import java.util.Date;
 
 /**
+ * 房屋描述
  * @author youyusong
  * @date 2018/9/7
  */

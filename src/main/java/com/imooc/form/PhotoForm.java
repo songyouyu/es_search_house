@@ -3,6 +3,7 @@ package com.imooc.form;
 import lombok.Data;
 
 /**
+ * 图片表单
  * @author youyusong
  * @date 2018/9/6
  */

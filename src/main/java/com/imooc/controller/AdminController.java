@@ -1,11 +1,14 @@
 package com.imooc.controller;
 
 import com.google.gson.Gson;
+import com.imooc.base.ApiDataTableResponse;
 import com.imooc.base.ApiResponse;
+import com.imooc.base.ServiceMultiResult;
 import com.imooc.base.ServiceResult;
 import com.imooc.dto.HouseDTO;
 import com.imooc.dto.SupportAddressDTO;
 import com.imooc.entity.SupportAddress;
+import com.imooc.form.DatatableSearch;
 import com.imooc.form.HouseForm;
 import com.imooc.service.IAddressService;
 import com.imooc.service.IHouseService;
@@ -62,6 +65,15 @@ public class AdminController {
     }
 
     /**
+     * 房源列表页
+     * @return
+     */
+    @GetMapping("/admin/house/list")
+    public String houseListPage() {
+        return "admin/house-list";
+    }
+
+    /**
      * 新增房源功能页
      * @return
      */
@@ -105,6 +117,12 @@ public class AdminController {
         }
     }
 
+    /**
+     * 新增房源
+     * @param houseForm
+     * @param bindingResult
+     * @return
+     */
     @PostMapping("admin/add/house")
     @ResponseBody
     public ApiResponse addHouse(@Valid @ModelAttribute("form-house-add") HouseForm houseForm, BindingResult bindingResult) {
@@ -127,5 +145,24 @@ public class AdminController {
         }
 
         return ApiResponse.ofSuccess(ApiResponse.Status.NOT_VALID_PARAM);
+    }
+
+    /**
+     * 房源管理
+     * @param datatableSearch
+     * @return
+     */
+    @PostMapping("/admin/houses")
+    @ResponseBody
+    public ApiDataTableResponse houses(@ModelAttribute DatatableSearch datatableSearch) {
+        ServiceMultiResult<HouseDTO> multiResult = houseService.adminQuery(datatableSearch);
+
+        ApiDataTableResponse response = new ApiDataTableResponse(ApiResponse.Status.SUCCESS);
+        response.setData(multiResult.getResult());
+        response.setRecordsFiltered(multiResult.getTotal());
+        response.setRecordsTotal(multiResult.getTotal());
+        response.setDraw(datatableSearch.getDraw());
+
+        return response;
     }
 }

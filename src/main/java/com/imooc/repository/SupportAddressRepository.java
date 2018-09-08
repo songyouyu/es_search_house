@@ -6,6 +6,7 @@ import org.springframework.data.repository.CrudRepository;
 import java.util.List;
 
 /**
+ * 支持区域DAO
  * @author youyusong
  * @date 2018/9/6
  */

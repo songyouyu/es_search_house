@@ -5,6 +5,7 @@ import lombok.Data;
 import javax.persistence.*;
 
 /**
+ * 支持区域
  * @author youyusong
  * @date 2018/9/6
  */

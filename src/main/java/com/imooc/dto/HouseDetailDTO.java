@@ -3,6 +3,7 @@ package com.imooc.dto;
 import lombok.Data;
 
 /**
+ * 房屋详情DTO
  * @author youyusong
  * @date 2018/9/6
  */

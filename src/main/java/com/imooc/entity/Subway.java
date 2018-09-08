@@ -5,6 +5,7 @@ import lombok.Data;
 import javax.persistence.*;
 
 /**
+ * 地铁
  * @author youyusong
  * @date 2018/9/7
  */

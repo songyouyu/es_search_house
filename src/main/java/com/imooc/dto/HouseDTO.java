@@ -7,6 +7,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
+ * 房屋DTO
  * @author youyusong
  * @date 2018/9/6
  */

@@ -1,6 +1,7 @@
 package com.imooc.dto;
 
 /**
+ * 地铁DTO
  * @author youyusong
  * @date 2018/9/7
  */

@@ -9,6 +9,7 @@ import javax.validation.constraints.Size;
 import java.util.List;
 
 /**
+ * 房屋表单
  * @author youyusong
  * @date 2018/9/6
  */

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
+ * 支持区域DTO
  * @author youyusong
  * @date 2018/9/6
  */

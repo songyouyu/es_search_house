@@ -1,11 +1,13 @@
 package com.imooc.service.impl;
 
 import com.imooc.base.LoginUserUtil;
+import com.imooc.base.ServiceMultiResult;
 import com.imooc.base.ServiceResult;
 import com.imooc.dto.HouseDTO;
 import com.imooc.dto.HouseDetailDTO;
 import com.imooc.dto.HousePictureDTO;
 import com.imooc.entity.*;
+import com.imooc.form.DatatableSearch;
 import com.imooc.form.HouseForm;
 import com.imooc.form.PhotoForm;
 import com.imooc.repository.*;
@@ -14,6 +16,10 @@ import com.imooc.service.IQiNiuService;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -100,6 +106,23 @@ public class HouseServiceImpl implements IHouseService {
         }
 
         return new ServiceResult<>(true, null, houseDTO);
+    }
+
+    @Override
+    public ServiceMultiResult<HouseDTO> adminQuery(DatatableSearch searchBody) {
+        List<HouseDTO> houseDTOList = new ArrayList<>();
+
+        Sort sort = new Sort(Sort.Direction.fromString(searchBody.getDirection()), searchBody.getOrderBy());
+        int page = searchBody.getStart() / searchBody.getLength();
+        Pageable pageable = new PageRequest(page, searchBody.getLength(), sort);
+        Page<House> houses = houseRepository.findAll(pageable);
+
+        houses.forEach(house -> {
+            HouseDTO houseDTO = modelMapper.map(house, HouseDTO.class);
+            houseDTO.setCover(this.cdnPrefix + house.getCover());
+            houseDTOList.add(houseDTO);
+        });
+        return new ServiceMultiResult<>(houses.getTotalElements(), houseDTOList);
     }
 
     /**
