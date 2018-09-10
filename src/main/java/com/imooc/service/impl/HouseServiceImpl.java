@@ -1,5 +1,6 @@
 package com.imooc.service.impl;
 
+import com.imooc.base.HouseStatus;
 import com.imooc.base.LoginUserUtil;
 import com.imooc.base.ServiceMultiResult;
 import com.imooc.base.ServiceResult;
@@ -13,6 +14,8 @@ import com.imooc.form.PhotoForm;
 import com.imooc.repository.*;
 import com.imooc.service.IHouseService;
 import com.imooc.service.IQiNiuService;
+import com.qiniu.common.QiniuException;
+import com.qiniu.http.Response;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,8 +23,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import javax.persistence.criteria.Predicate;
 import java.util.*;
 
 /**
@@ -115,7 +121,35 @@ public class HouseServiceImpl implements IHouseService {
         Sort sort = new Sort(Sort.Direction.fromString(searchBody.getDirection()), searchBody.getOrderBy());
         int page = searchBody.getStart() / searchBody.getLength();
         Pageable pageable = new PageRequest(page, searchBody.getLength(), sort);
-        Page<House> houses = houseRepository.findAll(pageable);
+
+        Specification<House> specification = (root, query, cb) -> {
+            Predicate predicate = cb.equal(root.get("adminId"), LoginUserUtil.getLoginUserId());
+            predicate = cb.and(predicate, cb.notEqual(root.get("status"), HouseStatus.DELETED.getValue()));
+
+            if (searchBody.getCity() != null) {
+                predicate = cb.and(predicate, cb.equal(root.get("cityEnName"), searchBody.getCity()));
+            }
+
+            if (searchBody.getStatus() != null) {
+                predicate = cb.and(predicate, cb.equal(root.get("status"), searchBody.getStatus()));
+            }
+
+            if (searchBody.getCreateTimeMin() != null) {
+                predicate = cb.and(predicate, cb.greaterThanOrEqualTo(root.get("createTime"), searchBody.getCreateTimeMin()));
+            }
+
+            if (searchBody.getCreateTimeMax() != null) {
+                predicate = cb.and(predicate, cb.lessThanOrEqualTo(root.get("createTime"), searchBody.getCreateTimeMax()));
+            }
+
+            if (searchBody.getTitle() != null) {
+                predicate = cb.and(predicate, cb.like(root.get("title"), "%" + searchBody.getTitle() + "%"));
+            }
+
+            return predicate;
+        };
+
+        Page<House> houses = houseRepository.findAll(specification, pageable);
 
         houses.forEach(house -> {
             HouseDTO houseDTO = modelMapper.map(house, HouseDTO.class);
@@ -123,6 +157,165 @@ public class HouseServiceImpl implements IHouseService {
             houseDTOList.add(houseDTO);
         });
         return new ServiceMultiResult<>(houses.getTotalElements(), houseDTOList);
+    }
+
+    @Override
+    public ServiceResult<HouseDTO> findCompleteOne(Long id) {
+        House house = houseRepository.findOne(id);
+        if (house == null) {
+            return ServiceResult.notFound();
+        }
+
+        HouseDetail detail = houseDetailRepository.findByHouseId(id);
+        List<HousePicture> pictures = housePictureRepository.findAllByHouseId(id);
+
+        HouseDetailDTO detailDTO = modelMapper.map(detail, HouseDetailDTO.class);
+        List<HousePictureDTO> pictureDTOS = new ArrayList<>();
+        for (HousePicture picture : pictures) {
+            HousePictureDTO pictureDTO = modelMapper.map(picture, HousePictureDTO.class);
+            pictureDTOS.add(pictureDTO);
+        }
+
+
+        List<HouseTag> tags = houseTagRepository.findAllByHouseId(id);
+        List<String> tagList = new ArrayList<>();
+        for (HouseTag tag : tags) {
+            tagList.add(tag.getName());
+        }
+
+        HouseDTO result = modelMapper.map(house, HouseDTO.class);
+        result.setHouseDetail(detailDTO);
+        result.setPictures(pictureDTOS);
+        result.setTags(tagList);
+
+        return ServiceResult.of(result);
+    }
+
+    @Override
+    @Transactional
+    public ServiceResult update(HouseForm houseForm) {
+        House house = this.houseRepository.findOne(houseForm.getId());
+        if (house == null) {
+            return ServiceResult.notFound();
+        }
+
+        HouseDetail detail = this.houseDetailRepository.findByHouseId(house.getId());
+        if (detail == null) {
+            return ServiceResult.notFound();
+        }
+
+        ServiceResult wrapperResult = wrapperDetailInfo(detail, houseForm);
+        if (wrapperResult != null) {
+            return wrapperResult;
+        }
+
+        houseDetailRepository.save(detail);
+
+        List<HousePicture> pictures = generatePictures(houseForm, houseForm.getId());
+        housePictureRepository.save(pictures);
+
+        if (houseForm.getCover() == null) {
+            houseForm.setCover(house.getCover());
+        }
+
+        // 把数据全部映射到 house 中
+        modelMapper.map(houseForm, house);
+        house.setLastUpdateTime(new Date());
+        houseRepository.save(house);
+
+        return ServiceResult.success();
+    }
+
+    @Override
+    public ServiceResult removePhoto(Long id) {
+        HousePicture picture = housePictureRepository.findOne(id);
+        if (picture == null) {
+            return ServiceResult.notFound();
+        }
+
+        try {
+            Response response = this.qiNiuService.delete(picture.getPath());
+            if (response.isOK()) {
+                housePictureRepository.delete(id);
+                return ServiceResult.success();
+            } else {
+                return new ServiceResult(false, response.error);
+            }
+        } catch (QiniuException e) {
+            e.printStackTrace();
+            return new ServiceResult(false, e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public ServiceResult updateCover(Long coverId, Long targetId) {
+        HousePicture cover = housePictureRepository.findOne(coverId);
+        if (cover == null) {
+            return ServiceResult.notFound();
+        }
+
+        houseRepository.updateCover(targetId, cover.getPath());
+        return ServiceResult.success();
+    }
+
+    @Override
+    @Transactional
+    public ServiceResult addTag(Long houseId, String tag) {
+        House house = houseRepository.findOne(houseId);
+        if (house == null) {
+            return ServiceResult.notFound();
+        }
+
+        HouseTag houseTag = houseTagRepository.findByNameAndHouseId(tag, houseId);
+        if (houseTag != null) {
+            return new ServiceResult(false, "标签已存在");
+        }
+
+        houseTagRepository.save(new HouseTag(houseId, tag));
+        return ServiceResult.success();
+    }
+
+    @Override
+    @Transactional
+    public ServiceResult removeTag(Long houseId, String tag) {
+        House house = houseRepository.findOne(houseId);
+        if (house == null) {
+            return ServiceResult.notFound();
+        }
+
+        HouseTag houseTag = houseTagRepository.findByNameAndHouseId(tag, houseId);
+        if (houseTag == null) {
+            return new ServiceResult(false, "标签不存在");
+        }
+
+        houseTagRepository.delete(houseTag.getId());
+        return ServiceResult.success();
+    }
+
+    @Override
+    @Transactional
+    public ServiceResult updateStatus(Long id, int status) {
+        House house = houseRepository.findOne(id);
+        if (house == null) {
+            return ServiceResult.notFound();
+        }
+
+        if (house.getStatus() == status) {
+            return new ServiceResult(false, "状态没有发生变化");
+        }
+
+        if (house.getStatus() == HouseStatus.RENTED.getValue()) {
+            return new ServiceResult(false, "已出租的房源不允许修改状态");
+        }
+
+        if (house.getStatus() == HouseStatus.DELETED.getValue()) {
+            return new ServiceResult(false, "已删除的资源不允许操作");
+        }
+
+        houseRepository.updateStatus(id, status);
+
+        return ServiceResult.success();
     }
 
     /**
