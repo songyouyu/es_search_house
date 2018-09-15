@@ -1,5 +1,7 @@
 package com.imooc.service;
 
+import com.imooc.base.ServiceResult;
+import com.imooc.dto.UserDTO;
 import com.imooc.entity.User;
 
 /**
@@ -15,5 +17,12 @@ public interface IUserService {
      * @return
      */
     User findUserByName(String userName);
+
+    /**
+     * 根据用户ID寻找用户
+     * @param userId
+     * @return
+     */
+    ServiceResult<UserDTO> findById(Long userId);
 
 }

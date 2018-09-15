@@ -3,6 +3,7 @@ package com.imooc.dto;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -66,5 +67,12 @@ public class HouseDTO implements Serializable {
     private List<HousePictureDTO> pictures;
 
     private Integer subscribeStatus;
+
+    public List<String> getTags() {
+        if (this.tags == null) {
+            tags = new ArrayList<>();
+        }
+        return tags;
+    }
 
 }
