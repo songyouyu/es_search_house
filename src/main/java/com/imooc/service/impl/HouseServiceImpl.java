@@ -13,6 +13,7 @@ import com.imooc.form.RentSearch;
 import com.imooc.repository.*;
 import com.imooc.service.IHouseService;
 import com.imooc.service.IQiNiuService;
+import com.imooc.service.ISearchService;
 import com.qiniu.common.QiniuException;
 import com.qiniu.http.Response;
 import org.modelmapper.ModelMapper;
@@ -57,6 +58,9 @@ public class HouseServiceImpl implements IHouseService {
 
     @Autowired
     private SubwayStationRepository subwayStationRepository;
+
+    @Autowired
+    private ISearchService searchService;
 
     @Autowired
     private HouseSubscribeRepository subscribeRespository;
@@ -222,6 +226,10 @@ public class HouseServiceImpl implements IHouseService {
         house.setLastUpdateTime(new Date());
         houseRepository.save(house);
 
+        if (house.getStatus() == HouseStatus.PASSES.getValue()) {
+            searchService.index(house.getId());
+        }
+
         return ServiceResult.success();
     }
 
@@ -314,6 +322,12 @@ public class HouseServiceImpl implements IHouseService {
 
         houseRepository.updateStatus(id, status);
 
+        // 上架更新索引, 其他情况需要删除索引
+        if (status == HouseStatus.PASSES.getValue()) {
+            searchService.index(id);
+        } else {
+            searchService.remove(id);
+        }
         return ServiceResult.success();
     }
 
