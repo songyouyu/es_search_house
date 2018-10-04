@@ -1,7 +1,6 @@
 package com.imooc.service.impl;
 
 import com.imooc.service.ISearchService;
-import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +20,6 @@ public class SearchServiceImplTest {
 
     @Test
     public void index() {
-        boolean success = searchService.index(15L);
-        Assert.assertTrue(success);
+        searchService.index(15L);
     }
 }

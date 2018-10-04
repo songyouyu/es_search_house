@@ -9,6 +9,7 @@ import com.imooc.entity.SupportAddress;
 import com.imooc.form.RentSearch;
 import com.imooc.service.IAddressService;
 import com.imooc.service.IHouseService;
+import com.imooc.service.ISearchService;
 import com.imooc.service.IUserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
@@ -35,6 +36,22 @@ public class HouseController {
     private IHouseService houseService;
     @Autowired
     private IUserService userService;
+    @Autowired
+    private ISearchService searchService;
+
+    /**
+     * 自动补全接口
+     */
+    @GetMapping("rent/house/autocomplete")
+    @ResponseBody
+    public ApiResponse autocomplete(@RequestParam(value = "prefix") String prefix) {
+        if (prefix.isEmpty()) {
+            return ApiResponse.ofStatus(ApiResponse.Status.BAD_REQUEST);
+        }
+
+        ServiceResult<List<String>> result = searchService.suggest(prefix);
+        return ApiResponse.ofSuccess(result.getResult());
+    }
 
     /**
      * 获取所有城市
@@ -186,7 +203,8 @@ public class HouseController {
         model.addAttribute("agent", userDTOServiceResult.getResult());
         model.addAttribute("house", houseDTO);
 
-        model.addAttribute("houseCountInDistrict", 0);
+        ServiceResult<Long> result = searchService.aggregateDistrictHouse(city.getEnName(), region.getEnName(), houseDTO.getDistrict());
+        model.addAttribute("houseCountInDistrict", result.getResult());
 
         return "house-detail";
     }
