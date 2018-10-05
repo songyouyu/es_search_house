@@ -8,17 +8,19 @@ import com.imooc.base.HouseSort;
 import com.imooc.base.RentValueBlock;
 import com.imooc.base.ServiceMultiResult;
 import com.imooc.base.ServiceResult;
+import com.imooc.dto.HouseBucketDTO;
 import com.imooc.entity.House;
 import com.imooc.entity.HouseDetail;
 import com.imooc.entity.HouseTag;
+import com.imooc.entity.SupportAddress;
+import com.imooc.form.MapSearch;
 import com.imooc.form.RentSearch;
 import com.imooc.repository.HouseDetailRepository;
 import com.imooc.repository.HouseRepository;
 import com.imooc.repository.HouseTagRepository;
-import com.imooc.search.HouseIndexKey;
-import com.imooc.search.HouseIndexMessage;
-import com.imooc.search.HouseIndexTemplate;
-import com.imooc.search.HouseSuggest;
+import com.imooc.repository.SupportAddressRepository;
+import com.imooc.search.*;
+import com.imooc.service.IAddressService;
 import com.imooc.service.ISearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.elasticsearch.action.admin.indices.analyze.AnalyzeAction;
@@ -29,6 +31,7 @@ import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.transport.TransportClient;
+import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
@@ -38,6 +41,7 @@ import org.elasticsearch.index.reindex.DeleteByQueryAction;
 import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.sort.SortOrder;
@@ -86,6 +90,10 @@ public class SearchServiceImpl implements ISearchService {
     private HouseTagRepository houseTagRepository;
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;
+    @Autowired
+    private SupportAddressRepository supportAddressRepository;
+    @Autowired
+    private IAddressService addressService;
 
     @KafkaListener(topics = INDEX_TOPIC)
     private void handleMessage(String content) {
@@ -127,6 +135,18 @@ public class SearchServiceImpl implements ISearchService {
         }
         modelMapper.map(houseDetail, template);
 
+        SupportAddress city = supportAddressRepository.findByEnNameAndLevel(house.getCityEnName(), SupportAddress.Level.CITY.getValue());
+
+        SupportAddress region = supportAddressRepository.findByEnNameAndLevel(house.getRegionEnName(), SupportAddress.Level.REGION.getValue());
+
+        String address = city.getCnName() + region.getCnName() + house.getStreet() + house.getDistrict() + houseDetail.getDetailAddress();
+        ServiceResult<BaiduMapLocation> location = addressService.getBaiduMapLocation(city.getCnName(), address);
+        if (!location.isSuccess()) {
+            this.index(message.getHouseId(), message.getRetry() + 1);
+            return;
+        }
+        template.setLocation(location.getResult());
+
         List<HouseTag> listTags = houseTagRepository.findAllByHouseId(houseId);
         if (listTags != null && ! listTags.isEmpty()) {
             List<String> tagString = new ArrayList<>();
@@ -150,10 +170,15 @@ public class SearchServiceImpl implements ISearchService {
             success = deleteAndCreate(totalHits, template);
         }
 
-        if (success) {
+        ServiceResult serviceResult = addressService.lbsUpload(location.getResult(), house.getStreet() + house.getDistrict(),
+                city.getCnName() + region.getCnName() + house.getStreet() + house.getDistrict(),
+                message.getHouseId(), house.getPrice(), house.getArea());
+
+        if (!success || !serviceResult.isSuccess()) {
+            this.index(message.getHouseId(), message.getRetry() + 1);
+        } else {
             log.debug("Index success with house " + houseId);
         }
-
     }
 
     private void removeIndex(HouseIndexMessage message) {
@@ -168,7 +193,11 @@ public class SearchServiceImpl implements ISearchService {
         long deleted = response.getDeleted();
         log.debug("Delete total : " + deleted);
 
-        if (deleted <= 0) {
+        ServiceResult serviceResult = addressService.removeLbs(houseId);
+
+        if (!serviceResult.isSuccess() || deleted <= 0) {
+            log.warn("Did not remove data from es for response: " + response);
+            // 重新加入消息队列
             this.remove(houseId, message.getRetry() + 1);
         }
     }
@@ -356,6 +385,93 @@ public class SearchServiceImpl implements ISearchService {
 
         }
         return ServiceResult.of(0L);
+    }
+
+    @Override
+    public ServiceMultiResult<HouseBucketDTO> mapAggregate(String cityEnName) {
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+        boolQuery.filter(QueryBuilders.termQuery(HouseIndexKey.CITY_EN_NAME, cityEnName));
+
+        AggregationBuilder aggBuilder = AggregationBuilders.terms(HouseIndexKey.AGG_REGION)
+                .field(HouseIndexKey.REGION_EN_NAME);
+        SearchRequestBuilder requestBuilder = this.esClient.prepareSearch(INDEX_NAME)
+                .setTypes(INDEX_TYPE)
+                .setQuery(boolQuery)
+                .addAggregation(aggBuilder);
+
+        log.debug(requestBuilder.toString());
+
+        SearchResponse response = requestBuilder.get();
+        List<HouseBucketDTO> buckets = new ArrayList<>();
+        if (response.status() != RestStatus.OK) {
+            log.warn("Aggregate status is not ok for " + requestBuilder);
+            return new ServiceMultiResult<>(0, buckets);
+        }
+
+        Terms terms = response.getAggregations().get(HouseIndexKey.AGG_REGION);
+        for (Terms.Bucket bucket : terms.getBuckets()) {
+            buckets.add(new HouseBucketDTO(bucket.getKeyAsString(), bucket.getDocCount()));
+        }
+
+        return new ServiceMultiResult<>(response.getHits().getTotalHits(), buckets);
+    }
+
+    @Override
+    public ServiceMultiResult<Long> mapQuery(String cityEnName, String orderBy, String orderDirection, int start, int size) {
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+        boolQuery.filter(QueryBuilders.termQuery(HouseIndexKey.CITY_EN_NAME, cityEnName));
+
+        SearchRequestBuilder searchRequestBuilder = this.esClient.prepareSearch(INDEX_NAME)
+                .setTypes(INDEX_TYPE)
+                .setQuery(boolQuery)
+                .addSort(HouseSort.getSortKey(orderBy), SortOrder.fromString(orderDirection))
+                .setFrom(start)
+                .setSize(size);
+
+        List<Long> houseIds = new ArrayList<>();
+        SearchResponse response = searchRequestBuilder.get();
+        if (response.status() != RestStatus.OK) {
+            log.warn("Search status is not ok for " + searchRequestBuilder);
+            return new ServiceMultiResult<>(0, houseIds);
+        }
+
+        for (SearchHit hit : response.getHits()) {
+            houseIds.add(Longs.tryParse(String.valueOf(hit.getSource().get(HouseIndexKey.HOUSE_ID))));
+        }
+        return new ServiceMultiResult<>(response.getHits().getTotalHits(), houseIds);
+    }
+
+    @Override
+    public ServiceMultiResult<Long> mapQuery(MapSearch mapSearch) {
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+        boolQuery.filter(QueryBuilders.termQuery(HouseIndexKey.CITY_EN_NAME, mapSearch.getCityEnName()));
+
+        boolQuery.filter(
+                QueryBuilders.geoBoundingBoxQuery("location")
+                        .setCorners(
+                                new GeoPoint(mapSearch.getLeftLatitude(), mapSearch.getLeftLongitude()),
+                                new GeoPoint(mapSearch.getRightLatitude(), mapSearch.getRightLongitude())
+                        ));
+
+        SearchRequestBuilder builder = this.esClient.prepareSearch(INDEX_NAME)
+                .setTypes(INDEX_TYPE)
+                .setQuery(boolQuery)
+                .addSort(HouseSort.getSortKey(mapSearch.getOrderBy()),
+                        SortOrder.fromString(mapSearch.getOrderDirection()))
+                .setFrom(mapSearch.getStart())
+                .setSize(mapSearch.getSize());
+
+        List<Long> houseIds = new ArrayList<>();
+        SearchResponse response = builder.get();
+        if (RestStatus.OK != response.status()) {
+            log.warn("Search status is not ok for " + builder);
+            return new ServiceMultiResult<>(0, houseIds);
+        }
+
+        for (SearchHit hit : response.getHits()) {
+            houseIds.add(Longs.tryParse(String.valueOf(hit.getSource().get(HouseIndexKey.HOUSE_ID))));
+        }
+        return new ServiceMultiResult<>(response.getHits().getTotalHits(), houseIds);
     }
 
     private boolean updateSuggest(HouseIndexTemplate indexTemplate) {

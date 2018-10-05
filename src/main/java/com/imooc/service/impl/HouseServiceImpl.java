@@ -6,10 +6,7 @@ import com.imooc.dto.HouseDTO;
 import com.imooc.dto.HouseDetailDTO;
 import com.imooc.dto.HousePictureDTO;
 import com.imooc.entity.*;
-import com.imooc.form.DatatableSearch;
-import com.imooc.form.HouseForm;
-import com.imooc.form.PhotoForm;
-import com.imooc.form.RentSearch;
+import com.imooc.form.*;
 import com.imooc.repository.*;
 import com.imooc.service.IHouseService;
 import com.imooc.service.IQiNiuService;
@@ -344,6 +341,28 @@ public class HouseServiceImpl implements IHouseService {
         }
 
         return simpleQuery(rentSearch);
+    }
+
+    @Override
+    public ServiceMultiResult<HouseDTO> wholeMapQuery(MapSearch mapSearch) {
+        ServiceMultiResult<Long> serviceResult = searchService.mapQuery(mapSearch.getCityEnName(), mapSearch.getOrderBy(), mapSearch.getOrderDirection(), mapSearch.getStart(), mapSearch.getSize());
+
+        if (serviceResult.getTotal() == 0) {
+            return new ServiceMultiResult<>(0, new ArrayList<>());
+        }
+        List<HouseDTO> houses = wrapperHouseResult(serviceResult.getResult());
+        return new ServiceMultiResult<>(serviceResult.getTotal(), houses);
+    }
+
+    @Override
+    public ServiceMultiResult<HouseDTO> boundMapQuery(MapSearch mapSearch) {
+        ServiceMultiResult<Long> serviceResult = searchService.mapQuery(mapSearch);
+        if (serviceResult.getTotal() == 0) {
+            return new ServiceMultiResult<>(0, new ArrayList<>());
+        }
+
+        List<HouseDTO> houses = wrapperHouseResult(serviceResult.getResult());
+        return new ServiceMultiResult<>(serviceResult.getTotal(), houses);
     }
 
     private ServiceMultiResult<HouseDTO> simpleQuery(RentSearch rentSearch) {
