@@ -10,10 +10,12 @@ import com.imooc.form.HouseForm;
 import com.imooc.service.IAddressService;
 import com.imooc.service.IHouseService;
 import com.imooc.service.IQiNiuService;
+import com.imooc.service.IUserService;
 import com.qiniu.common.QiniuException;
 import com.qiniu.http.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.util.Pair;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
@@ -44,7 +46,8 @@ public class AdminController {
     private IAddressService addressService;
     @Autowired
     private IHouseService houseService;
-
+    @Autowired
+    private IUserService userService;
 
     @GetMapping("/admin/center")
     public String adminCenterPage() {
@@ -342,5 +345,56 @@ public class AdminController {
         }
         return ApiResponse.ofMessage(HttpStatus.BAD_REQUEST.value(),
                 result.getMessage());
+    }
+
+    @GetMapping("admin/house/subscribe")
+    public String houseSubscribe() {
+        return "admin/subscribe";
+    }
+
+
+    @GetMapping("admin/house/subscribe/list")
+    @ResponseBody
+    public ApiResponse subscribeList(@RequestParam(value = "draw") int draw,
+                                     @RequestParam(value = "start") int start,
+                                     @RequestParam(value = "length") int size) {
+        ServiceMultiResult<Pair<HouseDTO, HouseSubscribeDTO>> result = houseService.findSubscribeList(start, size);
+
+        ApiDataTableResponse response = new ApiDataTableResponse(ApiResponse.Status.SUCCESS);
+        response.setData(result.getResult());
+        response.setDraw(draw);
+        response.setRecordsFiltered(result.getTotal());
+        response.setRecordsTotal(result.getTotal());
+        return response;
+    }
+
+    @GetMapping("admin/user/{userId}")
+    @ResponseBody
+    public ApiResponse getUserInfo(@PathVariable(value = "userId") Long userId) {
+        if (userId == null || userId < 1) {
+            return ApiResponse.ofStatus(ApiResponse.Status.BAD_REQUEST);
+        }
+
+        ServiceResult<UserDTO> serviceResult = userService.findById(userId);
+        if (!serviceResult.isSuccess()) {
+            return ApiResponse.ofStatus(ApiResponse.Status.NOT_FOUND);
+        } else {
+            return ApiResponse.ofSuccess(serviceResult.getResult());
+        }
+    }
+
+    @PostMapping("admin/finish/subscribe")
+    @ResponseBody
+    public ApiResponse finishSubscribe(@RequestParam(value = "house_id") Long houseId) {
+        if (houseId < 1) {
+            return ApiResponse.ofStatus(ApiResponse.Status.BAD_REQUEST);
+        }
+
+        ServiceResult serviceResult = houseService.finishSubscribe(houseId);
+        if (serviceResult.isSuccess()) {
+            return ApiResponse.ofSuccess("");
+        } else {
+            return ApiResponse.ofMessage(ApiResponse.Status.BAD_REQUEST.getCode(), serviceResult.getMessage());
+        }
     }
 }

@@ -6,7 +6,7 @@ import javax.persistence.*;
 import java.util.Date;
 
 /**
- * 房屋描述
+ * 预约看房实体类
  * @author youyusong
  * @date 2018/9/7
  */
